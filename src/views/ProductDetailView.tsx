@@ -133,30 +133,72 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ slug, navi
     setReviewFormOpen(false);
   };
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const productUrl = `${origin}/product/${product.slug}`;
+  const resolvedImages = product.images.map((img) =>
+    img.startsWith('http') || img.startsWith('data:') ? img : `${origin}${img}`
+  );
+
   const productSchema = {
-    '@context': 'https://schema.org/',
-    '@type': 'Product',
-    name: product.name,
-    image: product.images,
-    description: product.description,
-    sku: product.sku,
-    brand: {
-      '@type': 'Brand',
-      name: 'Mikkimama',
-    },
-    offers: {
-      '@type': 'Offer',
-      priceCurrency: 'INR',
-      price: product.salePrice,
-      availability: isOutOfStock
-        ? 'https://schema.org/OutOfStock'
-        : 'https://schema.org/InStock',
-    },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: product.rating,
-      reviewCount: product.reviewCount,
-    },
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Product',
+        name: product.name,
+        image: resolvedImages,
+        description: product.seoDescription || product.shortDescription || product.description,
+        sku: product.sku,
+        category: product.category,
+        brand: {
+          '@type': 'Brand',
+          name: 'Mikkimama',
+        },
+        offers: {
+          '@type': 'Offer',
+          url: productUrl,
+          priceCurrency: 'INR',
+          price: product.salePrice,
+          availability: isOutOfStock
+            ? 'https://schema.org/OutOfStock'
+            : 'https://schema.org/InStock',
+          itemCondition: 'https://schema.org/NewCondition',
+        },
+        ...(product.reviewCount > 0
+          ? {
+              aggregateRating: {
+                '@type': 'AggregateRating',
+                ratingValue: product.rating,
+                reviewCount: product.reviewCount,
+                bestRating: 5,
+                worstRating: 1,
+              },
+            }
+          : {}),
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          {
+            '@type': 'ListItem',
+            position: 1,
+            name: 'Home',
+            item: `${origin}/`,
+          },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: 'Shop',
+            item: `${origin}/shop`,
+          },
+          {
+            '@type': 'ListItem',
+            position: 3,
+            name: product.name,
+            item: productUrl,
+          },
+        ],
+      },
+    ],
   };
 
   return (
@@ -191,7 +233,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ slug, navi
           <div className="relative aspect-[4/3] bg-[#F4EFEA] border border-[#E5D9D0] rounded-xl overflow-hidden group">
             <ResilientImage
               src={product.images[selectedImageIdx] || product.images[0]}
-              alt={`${product.name} view ${selectedImageIdx + 1}`}
+              alt={`${product.name} — ${product.category} by Mikkimama (View ${selectedImageIdx + 1})`}
+              loading="eager"
+              fetchPriority="high"
+              width={900}
+              height={675}
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 cursor-zoom-in"
               onClick={() => setZoomOpen(true)}
             />

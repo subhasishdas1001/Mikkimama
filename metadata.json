@@ -2,5 +2,7 @@
   "name": "Mikkimama – Handmade With Love",
   "description": "Premium handmade botanical resin jewellery, artisan hair accessories, bracelets, and bespoke keepsakes handcrafted with love.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

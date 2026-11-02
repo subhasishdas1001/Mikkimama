@@ -87,6 +87,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, navigate }) => {
                 alt="Mikkimama — Handmade With Love"
                 loading="eager"
                 decoding="async"
+                fetchPriority="high"
+                width={64}
+                height={64}
                 className="h-12 sm:h-16 w-auto object-contain bg-transparent select-none"
               />
             </button>

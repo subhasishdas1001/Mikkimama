@@ -78,7 +78,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
             <div className="relative rounded-xl overflow-hidden border border-[#E2D4C8] bg-[#FAF7F2] shadow-sm aspect-[4/3] sm:aspect-[16/11]">
               <ResilientImage
                 src={settings.heroImage}
-                alt="Mikkimama Handmade Botanical Resin Jewellery"
+                alt={`${settings.heroHeading} — Mikkimama Handmade With Love`}
+                loading="eager"
+                fetchPriority="high"
+                width={1200}
+                height={825}
                 className="w-full h-full object-cover"
               />
             </div>

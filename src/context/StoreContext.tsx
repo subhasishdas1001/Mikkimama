@@ -6,15 +6,10 @@ import {
   User,
 } from 'firebase/auth';
 import {
-  collection,
   deleteDoc,
   doc,
-  getDocs,
-  query,
   serverTimestamp,
   setDoc,
-  where,
-  writeBatch,
 } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
 import {
@@ -42,6 +37,22 @@ import {
   INITIAL_REVIEWS,
   INITIAL_SETTINGS,
 } from '../data/initialStoreData';
+
+declare global {
+  interface Window {
+    __MIKKIMAMA_STORE__?: {
+      products?: Product[];
+      categories?: Category[];
+      reviews?: Review[];
+      coupons?: Coupon[];
+      orders?: Order[];
+      manualOrders?: ManualOrderRecord[];
+      customers?: CustomerRecord[];
+      settings?: StoreSettings;
+      updatedAt?: string;
+    };
+  }
+}
 
 export interface ToastMessage {
   id: string;
@@ -135,19 +146,33 @@ interface StoreContextValue {
 const StoreContext = createContext<StoreContextValue | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'mkm_products_v1',
-  CATEGORIES: 'mkm_categories_v1',
-  REVIEWS: 'mkm_reviews_v1',
-  COUPONS: 'mkm_coupons_v1',
-  ORDERS: 'mkm_orders_v1',
-  MANUAL_ORDERS: 'mkm_manual_orders_v1',
-  CUSTOMERS: 'mkm_customers_v1',
-  SETTINGS: 'mkm_settings_v1',
-  CART: 'mkm_cart_v1',
-  SAVED: 'mkm_saved_v1',
-  WISHLIST: 'mkm_wishlist_v1',
+  PRODUCTS: 'mkm_products_v2',
+  CATEGORIES: 'mkm_categories_v2',
+  REVIEWS: 'mkm_reviews_v2',
+  COUPONS: 'mkm_coupons_v2',
+  ORDERS: 'mkm_orders_v2',
+  MANUAL_ORDERS: 'mkm_manual_orders_v2',
+  CUSTOMERS: 'mkm_customers_v2',
+  SETTINGS: 'mkm_settings_v2',
+  CART: 'mkm_cart_v2',
+  SAVED: 'mkm_saved_v2',
+  WISHLIST: 'mkm_wishlist_v2',
   ADMIN_SESSION: 'mkm_admin_session_v1',
 };
+
+const LEGACY_KEYS = [
+  'mkm_products_v1',
+  'mkm_categories_v1',
+  'mkm_reviews_v1',
+  'mkm_coupons_v1',
+  'mkm_orders_v1',
+  'mkm_manual_orders_v1',
+  'mkm_customers_v1',
+  'mkm_settings_v1',
+  'mkm_cart_v1',
+  'mkm_saved_v1',
+  'mkm_wishlist_v1',
+];
 
 function loadLocal<T>(key: string, fallback: T): T {
   try {
@@ -167,41 +192,64 @@ function saveLocal<T>(key: string, value: T) {
   }
 }
 
+function getPrehydratedStore() {
+  if (typeof window !== 'undefined' && window.__MIKKIMAMA_STORE__) {
+    return window.__MIKKIMAMA_STORE__;
+  }
+  return null;
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(() =>
-    loadLocal(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS)
-  );
-  const [categories, setCategories] = useState<Category[]>(() =>
-    loadLocal(STORAGE_KEYS.CATEGORIES, INITIAL_CATEGORIES)
-  );
-  const [reviews, setReviews] = useState<Review[]>(() =>
-    loadLocal(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS)
-  );
-  const [coupons, setCoupons] = useState<Coupon[]>(() =>
-    loadLocal(STORAGE_KEYS.COUPONS, INITIAL_COUPONS)
-  );
-  const [orders, setOrders] = useState<Order[]>(() =>
-    loadLocal(STORAGE_KEYS.ORDERS, INITIAL_ORDERS)
-  );
-  const [manualOrders, setManualOrders] = useState<ManualOrderRecord[]>(() =>
-    loadLocal(STORAGE_KEYS.MANUAL_ORDERS, INITIAL_MANUAL_ORDERS)
-  );
-  const [customers, setCustomers] = useState<CustomerRecord[]>(() =>
-    loadLocal(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS)
-  );
-  const [settings, setSettings] = useState<StoreSettings>(() =>
-    loadLocal(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS)
-  );
+  const [products, setProducts] = useState<Product[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.products)) return pre.products;
+    return loadLocal(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+  });
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.categories)) return pre.categories;
+    return loadLocal(STORAGE_KEYS.CATEGORIES, INITIAL_CATEGORIES);
+  });
+  const [reviews, setReviews] = useState<Review[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.reviews)) return pre.reviews;
+    return loadLocal(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
+  });
+  const [coupons, setCoupons] = useState<Coupon[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.coupons)) return pre.coupons;
+    return loadLocal(STORAGE_KEYS.COUPONS, INITIAL_COUPONS);
+  });
+  const [orders, setOrders] = useState<Order[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.orders)) return pre.orders;
+    return loadLocal(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
+  });
+  const [manualOrders, setManualOrders] = useState<ManualOrderRecord[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.manualOrders)) return pre.manualOrders;
+    return loadLocal(STORAGE_KEYS.MANUAL_ORDERS, INITIAL_MANUAL_ORDERS);
+  });
+  const [customers, setCustomers] = useState<CustomerRecord[]>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && Array.isArray(pre.customers)) return pre.customers;
+    return loadLocal(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
+  });
+  const [settings, setSettings] = useState<StoreSettings>(() => {
+    const pre = getPrehydratedStore();
+    if (pre && pre.settings && pre.settings.id) {
+      return { ...INITIAL_SETTINGS, ...pre.settings };
+    }
+    return loadLocal(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+  });
   const [cart, setCart] = useState<CartItem[]>(() =>
-    loadLocal(STORAGE_KEYS.CART, [
-      { productId: 'prod-rose-bracelet', variant: '18k Gold Plated (Adjustable)', quantity: 1 },
-    ])
+    loadLocal(STORAGE_KEYS.CART, [])
   );
   const [savedForLater, setSavedForLater] = useState<CartItem[]>(() =>
     loadLocal(STORAGE_KEYS.SAVED, [])
   );
   const [wishlist, setWishlist] = useState<string[]>(() =>
-    loadLocal(STORAGE_KEYS.WISHLIST, ['prod-daisy-necklace', 'prod-sunlit-hoop-earrings'])
+    loadLocal(STORAGE_KEYS.WISHLIST, [])
   );
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -253,6 +301,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (partial.customers) saveLocal(STORAGE_KEYS.CUSTOMERS, partial.customers);
       if (partial.settings) saveLocal(STORAGE_KEYS.SETTINGS, partial.settings);
 
+      if (typeof window !== 'undefined') {
+        window.__MIKKIMAMA_STORE__ = {
+          ...(window.__MIKKIMAMA_STORE__ || {}),
+          ...partial,
+        };
+      }
+
       try {
         await fetch('/api/store/state', {
           method: 'POST',
@@ -278,40 +333,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     saveLocal(STORAGE_KEYS.WISHLIST, wishlist);
   }, [wishlist]);
 
-  // Initial load from server store & public Firestore collections
+  // Purge legacy v1 localStorage keys & verify state with server
   useEffect(() => {
+    try {
+      for (const legacyKey of LEGACY_KEYS) {
+        localStorage.removeItem(legacyKey);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+
     let mounted = true;
     async function hydrateStore() {
       try {
-        const res = await fetch('/api/store/state');
+        const res = await fetch('/api/store/state', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (!mounted) return;
-          if (Array.isArray(data.products) && data.products.length > 0) {
+          if (Array.isArray(data.products)) {
             setProducts(data.products);
             saveLocal(STORAGE_KEYS.PRODUCTS, data.products);
           }
-          if (Array.isArray(data.categories) && data.categories.length > 0) {
+          if (Array.isArray(data.categories)) {
             setCategories(data.categories);
             saveLocal(STORAGE_KEYS.CATEGORIES, data.categories);
           }
-          if (Array.isArray(data.reviews) && data.reviews.length > 0) {
+          if (Array.isArray(data.reviews)) {
             setReviews(data.reviews);
             saveLocal(STORAGE_KEYS.REVIEWS, data.reviews);
           }
-          if (Array.isArray(data.coupons) && data.coupons.length > 0) {
+          if (Array.isArray(data.coupons)) {
             setCoupons(data.coupons);
             saveLocal(STORAGE_KEYS.COUPONS, data.coupons);
           }
-          if (Array.isArray(data.orders) && data.orders.length > 0) {
+          if (Array.isArray(data.orders)) {
             setOrders(data.orders);
             saveLocal(STORAGE_KEYS.ORDERS, data.orders);
           }
-          if (Array.isArray(data.manualOrders) && data.manualOrders.length > 0) {
+          if (Array.isArray(data.manualOrders)) {
             setManualOrders(data.manualOrders);
             saveLocal(STORAGE_KEYS.MANUAL_ORDERS, data.manualOrders);
           }
-          if (Array.isArray(data.customers) && data.customers.length > 0) {
+          if (Array.isArray(data.customers)) {
             setCustomers(data.customers);
             saveLocal(STORAGE_KEYS.CUSTOMERS, data.customers);
           }
@@ -325,34 +388,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       } catch {
-        // Use local defaults
-      }
-
-      // Also query published products from Firestore if present
-      try {
-        const prodQuery = query(collection(db, 'products'), where('status', '==', 'published'));
-        const snap = await getDocs(prodQuery);
-        if (!snap.empty && mounted) {
-          const firestoreProducts: Product[] = [];
-          snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            firestoreProducts.push({
-              ...(d as Product),
-              id: docSnap.id,
-              createdAt: d.createdAt?.toDate ? d.createdAt.toDate().toISOString() : String(d.createdAt || ''),
-              updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : String(d.updatedAt || ''),
-            });
-          });
-          if (firestoreProducts.length > 0) {
-            setProducts((prev) => {
-              const map = new Map(prev.map((p) => [p.id, p]));
-              firestoreProducts.forEach((fp) => map.set(fp.id, fp));
-              return Array.from(map.values());
-            });
-          }
-        }
-      } catch {
-        // Fallback to local/server state
+        // Use pre-hydrated or local defaults
       }
     }
     hydrateStore();
@@ -369,26 +405,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const profile = { email: user.email, name: user.displayName || 'Mikkimama Founder' };
         setAdminProfile(profile);
         saveLocal(STORAGE_KEYS.ADMIN_SESSION, profile);
-
-        // Seed Firestore if empty when verified admin signs in
-        try {
-          const prodQuery = query(collection(db, 'products'), where('status', '==', 'published'));
-          const snap = await getDocs(prodQuery);
-          if (snap.empty) {
-            const batch = writeBatch(db);
-            INITIAL_PRODUCTS.slice(0, 6).forEach((p) => {
-              const ref = doc(db, 'products', p.id);
-              batch.set(ref, {
-                ...p,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            });
-            await batch.commit();
-          }
-        } catch {
-          // Non-fatal seed check
-        }
       }
     });
     return () => unsubscribe();
