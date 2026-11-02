@@ -226,5 +226,15 @@ export interface StoreSettings {
   manualWhatsappOrderEnabled?: boolean;
   manualWhatsappNumber?: string;
   instagramHandle: string;
+  styleSectionHeading?: string;
+  styleInstagramUrl?: string;
+  styleImages?: string[];
+  customOrderHeading?: string;
+  customOrderDescription?: string;
+  customOrderButtonText?: string;
+  customOrderButtonLink?: string;
+  customOrderPromoText?: string;
+  customOrderImages?: string[];
   updatedAt: string;
 }
+

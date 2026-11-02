@@ -17,19 +17,45 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
     .filter((r) => r.status === 'approved' && r.featured)
     .slice(0, 3);
 
-  const stylingGallery = [
-    { src: '/assets/products/layered-necklaces.png', alt: 'Layered botanical necklaces' },
-    { src: '/assets/products/botanical-rings.png', alt: 'Delicate gold botanical rings' },
-    { src: '/assets/products/ceramic-dish-earrings.png', alt: 'Pressed flower drop earrings in dish' },
-    { src: '/assets/products/worn-gold-pendant.png', alt: 'Worn gold floral medallion pendant' },
-    { src: '/assets/products/silk-stud-earrings.png', alt: 'Pressed flower stud earrings on silk' },
+  const defaultStyleImages = [
+    '/assets/products/layered-necklaces.png',
+    '/assets/products/botanical-rings.png',
+    '/assets/products/ceramic-dish-earrings.png',
+    '/assets/products/worn-gold-pendant.png',
+    '/assets/products/silk-stud-earrings.png',
   ];
 
-  const customPreviewImages = [
-    { src: '/assets/products/heart-coaster-set.png', alt: 'Split heart pressed rose coaster' },
-    { src: '/assets/products/initial-keyrings-duo.png', alt: 'Personalised floral letter keyrings' },
-    { src: '/assets/products/gold-rim-tray.png', alt: 'Gold-rimmed botanical keepsake tray' },
+  const stylingGallery = (
+    Array.isArray(settings.styleImages) && settings.styleImages.length > 0
+      ? settings.styleImages
+      : defaultStyleImages
+  ).map((src, idx) => ({
+    src,
+    alt: `${settings.styleSectionHeading || 'See How You Style Your Pieces'} — Piece ${idx + 1}`,
+  }));
+
+  const defaultCustomImages = [
+    '/assets/products/heart-coaster-set.png',
+    '/assets/products/initial-keyrings-duo.png',
+    '/assets/products/gold-rim-tray.png',
   ];
+
+  const customPreviewImages = (
+    Array.isArray(settings.customOrderImages) && settings.customOrderImages.length > 0
+      ? settings.customOrderImages
+      : defaultCustomImages
+  ).map((src, idx) => ({
+    src,
+    alt: `${settings.customOrderHeading || 'Custom Order Piece'} — Preview ${idx + 1}`,
+  }));
+
+  const resolvedInstagramUrl =
+    settings.styleInstagramUrl?.trim() ||
+    (settings.instagramHandle?.trim().startsWith('http') ? settings.instagramHandle.trim() : '');
+
+  const customOrderBtnLink = settings.customOrderButtonLink?.trim() || '/contact';
+  const customOrderPromoLabel =
+    settings.customOrderPromoText?.trim() || `Use Code: ${settings.promoBannerCode}`;
 
   return (
     <div className="space-y-20">
@@ -222,30 +248,32 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-          {categories.map((cat) => (
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
+          {publishedProducts.map((prod) => (
             <div
-              key={cat.id}
-              onClick={() => navigate(`/category/${cat.slug}`)}
+              key={prod.id}
+              onClick={() => navigate(`/category/${prod.slug}`)}
               className="group cursor-pointer bg-white border border-[#E8DDD4] rounded-lg overflow-hidden flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-sm"
             >
               <div className="aspect-square bg-[#F4EFEA] overflow-hidden">
                 <ResilientImage
-                  src={cat.image}
-                  alt={cat.name}
+                  src={prod.images[0]}
+                  alt={`${prod.name} — ${prod.category || 'Handmade Accessories'} by Mikkimama`}
+                  width={500}
+                  height={500}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               </div>
-              <div className="p-4 flex items-center justify-between">
-                <div>
-                  <h3 className="font-serif-display text-lg font-semibold text-[#2C221E] group-hover:text-[#9E584D] transition-colors">
-                    {cat.name}
-                  </h3>
-                  <p className="text-xs text-[#7D6B61] font-mono-tabular">
-                    {cat.productCount} pieces
+              <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs text-[#737765] uppercase tracking-wider font-medium truncate">
+                    {prod.category || 'Handmade Accessories'}
                   </p>
+                  <h3 className="font-serif-display text-sm sm:text-lg font-semibold text-[#2C221E] group-hover:text-[#9E584D] transition-colors line-clamp-2 leading-snug mt-0.5">
+                    {prod.name}
+                  </h3>
                 </div>
-                <span className="text-xs font-medium text-[#737765] group-hover:translate-x-0.5 transition-transform">
+                <span className="text-xs font-medium text-[#737765] group-hover:translate-x-0.5 transition-transform shrink-0">
                   Explore →
                 </span>
               </div>
@@ -259,10 +287,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
         <div className="space-y-6">
           <div className="text-center space-y-1">
             <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2C221E]">
-              See How You Style Your Pieces
+              {settings.styleSectionHeading || 'See How You Style Your Pieces'}
             </h2>
             <p className="text-xs text-[#6E5D55]">
-              Follow us on Instagram <span className="underline">{settings.instagramHandle}</span>
+              Follow us on Instagram{' '}
+              {resolvedInstagramUrl ? (
+                <a
+                  href={resolvedInstagramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-[#9E584D] transition-colors"
+                >
+                  {settings.instagramHandle}
+                </a>
+              ) : (
+                <span className="underline">{settings.instagramHandle}</span>
+              )}
             </p>
           </div>
 
@@ -287,31 +327,45 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
         <div className="bg-[#EFE9E2] border border-[#DFD3C8] rounded-xl p-6 sm:p-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-5 space-y-4">
             <h3 className="font-serif-display text-3xl text-[#2C221E]">
-              Looking for something personal?
+              {settings.customOrderHeading || 'Looking for something personal?'}
             </h3>
             <p className="text-sm text-[#5A4A42] leading-relaxed">
-              We craft custom botanical resin pieces—from preserving your wedding bouquet petals to
-              monogrammed floral keyrings and bridesmaid gift boxes.
+              {settings.customOrderDescription ||
+                'We craft custom botanical resin pieces—from preserving your wedding bouquet petals to monogrammed floral keyrings and bridesmaid gift boxes.'}
             </p>
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              <button
-                onClick={() => navigate('/contact')}
-                className="px-5 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium uppercase tracking-wider rounded-md transition-colors"
-              >
-                Request a Custom Order
-              </button>
-              <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(settings.promoBannerCode);
-                  showToast(
-                    'Code Copied',
-                    `Use code ${settings.promoBannerCode} at checkout for special savings!`
-                  );
-                }}
-                className="px-4 py-2.5 bg-white border border-[#D8C7BE] text-xs font-mono-tabular text-[#2C221E] rounded-md hover:border-[#737765] transition-colors"
-              >
-                Use Code: {settings.promoBannerCode}
-              </button>
+              {customOrderBtnLink.startsWith('http://') ||
+              customOrderBtnLink.startsWith('https://') ? (
+                <a
+                  href={customOrderBtnLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium uppercase tracking-wider rounded-md transition-colors inline-block"
+                >
+                  {settings.customOrderButtonText || 'Request a Custom Order'}
+                </a>
+              ) : (
+                <button
+                  onClick={() => navigate(customOrderBtnLink)}
+                  className="px-5 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium uppercase tracking-wider rounded-md transition-colors"
+                >
+                  {settings.customOrderButtonText || 'Request a Custom Order'}
+                </button>
+              )}
+              {customOrderPromoLabel && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard?.writeText(settings.promoBannerCode);
+                    showToast(
+                      'Code Copied',
+                      `Use code ${settings.promoBannerCode} at checkout for special savings!`
+                    );
+                  }}
+                  className="px-4 py-2.5 bg-white border border-[#D8C7BE] text-xs font-mono-tabular text-[#2C221E] rounded-md hover:border-[#737765] transition-colors"
+                >
+                  {customOrderPromoLabel}
+                </button>
+              )}
             </div>
           </div>
 

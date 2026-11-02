@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
@@ -243,8 +243,24 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
     showToast,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    try {
+      const savedTab = sessionStorage.getItem('mkm_admin_active_tab') as AdminTab | null;
+      if (savedTab) return savedTab;
+    } catch {
+      // ignore storage errors
+    }
+    return 'dashboard';
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('mkm_admin_active_tab', activeTab);
+    } catch {
+      // ignore storage errors
+    }
+  }, [activeTab]);
 
   // Product Form Modal State
   const [editingProduct, setEditingProduct] = useState<
@@ -273,7 +289,23 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
   const [campaignPercent, setCampaignPercent] = useState<number>(25);
 
   // Homepage & Store Settings Draft State
-  const [draftSettings, setDraftSettings] = useState(settings);
+  const [draftSettings, setDraftSettingsState] = useState(settings);
+  const draftSettingsRef = useRef(settings);
+  const pendingUploadsRef = useRef<Promise<unknown>[]>([]);
+
+  const setDraftSettings = (
+    nextOrUpdater:
+      | typeof settings
+      | ((prev: typeof settings) => typeof settings)
+  ) => {
+    setDraftSettingsState((prev) => {
+      const next =
+        typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater;
+      draftSettingsRef.current = next;
+      return next;
+    });
+  };
+
   const [whatsappNumberError, setWhatsappNumberError] = useState<string>('');
   const [inspectingManualOrder, setInspectingManualOrder] = useState<ManualOrderRecord | null>(null);
 
@@ -287,7 +319,10 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
   } | null>(null);
 
   useEffect(() => {
-    setDraftSettings(settings);
+    if (settings.updatedAt !== draftSettingsRef.current.updatedAt) {
+      draftSettingsRef.current = settings;
+      setDraftSettingsState(settings);
+    }
   }, [settings]);
 
   useEffect(() => {
@@ -412,19 +447,221 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
     });
   };
 
+  // Optimize image file client-side and upload to /api/store/upload-image for permanent storage
+  const optimizeAndUploadImage = async (file: File): Promise<string> => {
+    const rawDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        typeof reader.result === 'string'
+          ? resolve(reader.result)
+          : reject(new Error('Failed to read file'));
+      reader.onerror = () => reject(new Error('File read error'));
+      reader.readAsDataURL(file);
+    });
+
+    // Compress/scale large images on a canvas so uploads and localStorage are always fast and under quota
+    const optimizedDataUrl = await new Promise<string>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 1200;
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width >= height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(rawDataUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const webp = canvas.toDataURL('image/webp', 0.86);
+          if (webp && webp.startsWith('data:image/')) {
+            resolve(webp);
+            return;
+          }
+          const jpeg = canvas.toDataURL('image/jpeg', 0.88);
+          resolve(jpeg && jpeg.startsWith('data:image/') ? jpeg : rawDataUrl);
+        } catch {
+          resolve(rawDataUrl);
+        }
+      };
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
+    });
+
+    try {
+      await fetch('/api/store/ping', { method: 'GET', cache: 'no-store' }).catch(() => null);
+      const postUpload = () =>
+        fetch('/api/store/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl: optimizedDataUrl }),
+          cache: 'no-store',
+        });
+
+      let res = await postUpload();
+      let data = res.ok ? await res.json().catch(() => null) : null;
+      if (!res.ok || res.redirected || !data || data.success !== true) {
+        res = await postUpload();
+        data = res.ok ? await res.json().catch(() => null) : null;
+      }
+      if (res.ok && data && data.success === true && typeof data.url === 'string') {
+        return data.url;
+      }
+    } catch {
+      // Fallback to optimizedDataUrl which POST /api/store/state will normalize
+    }
+
+    return optimizedDataUrl;
+  };
+
+  const trackUploadPromise = <T,>(promise: Promise<T>): Promise<T> => {
+    pendingUploadsRef.current.push(promise);
+    promise.finally(() => {
+      pendingUploadsRef.current = pendingUploadsRef.current.filter((p) => p !== promise);
+    });
+    return promise;
+  };
+
   const handleHeroImageUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     field: 'heroImage' | 'storyImage'
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setDraftSettings((prev) => ({ ...prev, [field]: reader.result as string }));
+    e.target.value = '';
+    void trackUploadPromise(
+      optimizeAndUploadImage(file).then((url) => {
+        setDraftSettings((prev) => ({ ...prev, [field]: url }));
+      })
+    );
+  };
+
+  const defaultStyleGalleryImages = [
+    '/assets/products/layered-necklaces.png',
+    '/assets/products/botanical-rings.png',
+    '/assets/products/ceramic-dish-earrings.png',
+    '/assets/products/worn-gold-pendant.png',
+    '/assets/products/silk-stud-earrings.png',
+  ];
+
+  const defaultCustomOrderGalleryImages = [
+    '/assets/products/heart-coaster-set.png',
+    '/assets/products/initial-keyrings-duo.png',
+    '/assets/products/gold-rim-tray.png',
+  ];
+
+  const getDraftGalleryImages = (
+    field: 'styleImages' | 'customOrderImages',
+    sourceSettings = draftSettings
+  ): string[] => {
+    const list = sourceSettings[field];
+    if (Array.isArray(list) && list.length > 0) return list;
+    return field === 'styleImages' ? defaultStyleGalleryImages : defaultCustomOrderGalleryImages;
+  };
+
+  const handleSectionGalleryUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: 'styleImages' | 'customOrderImages'
+  ) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+    e.target.value = '';
+
+    files.forEach((file) => {
+      void trackUploadPromise(
+        optimizeAndUploadImage(file).then((uploadedUrl) => {
+          setDraftSettings((prev) => {
+            const current = getDraftGalleryImages(field, prev);
+            return {
+              ...prev,
+              [field]: [...current, uploadedUrl],
+            };
+          });
+        })
+      );
+    });
+  };
+
+  const handleSectionImageReplace = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: 'styleImages' | 'customOrderImages',
+    index: number
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    void trackUploadPromise(
+      optimizeAndUploadImage(file).then((uploadedUrl) => {
+        setDraftSettings((prev) => {
+          const current = [...getDraftGalleryImages(field, prev)];
+          current[index] = uploadedUrl;
+          return {
+            ...prev,
+            [field]: current,
+          };
+        });
+      })
+    );
+  };
+
+  const moveSectionImage = (
+    field: 'styleImages' | 'customOrderImages',
+    index: number,
+    direction: 'prev' | 'next'
+  ) => {
+    setDraftSettings((prev) => {
+      const current = [...getDraftGalleryImages(field, prev)];
+      const targetIdx = direction === 'prev' ? index - 1 : index + 1;
+      if (targetIdx < 0 || targetIdx >= current.length) return prev;
+      const temp = current[index];
+      current[index] = current[targetIdx];
+      current[targetIdx] = temp;
+      return {
+        ...prev,
+        [field]: current,
+      };
+    });
+  };
+
+  const removeSectionImage = (field: 'styleImages' | 'customOrderImages', index: number) => {
+    setDraftSettings((prev) => {
+      const current = [...getDraftGalleryImages(field, prev)];
+      if (current.length <= 1) {
+        showToast('Minimum 1 Image', 'Please keep at least one image in this section.', 'info');
+        return prev;
       }
+      current.splice(index, 1);
+      return {
+        ...prev,
+        [field]: current,
+      };
+    });
+  };
+
+  const handleSaveHomepageSettings = async () => {
+    if (pendingUploadsRef.current.length > 0) {
+      await Promise.allSettled([...pendingUploadsRef.current]);
+    }
+    const latestDraft = draftSettingsRef.current;
+    const payloadToSave = {
+      ...latestDraft,
+      styleImages: getDraftGalleryImages('styleImages', latestDraft),
+      customOrderImages: getDraftGalleryImages('customOrderImages', latestDraft),
     };
-    reader.readAsDataURL(file);
+    setDraftSettings(payloadToSave);
+    await updateStoreSettings(payloadToSave);
   };
 
   return (
@@ -2532,11 +2769,388 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
 
                 <button
                   type="button"
-                  onClick={() => updateStoreSettings(draftSettings)}
+                  onClick={() => void handleSaveHomepageSettings()}
                   className="px-6 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md"
                 >
                   Publish Homepage Changes
                 </button>
+              </div>
+
+              {/* Homepage → Style / Instagram Section */}
+              <div className="bg-white border border-[#E5D9D0] rounded-lg p-6 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-serif-display text-2xl font-semibold text-[#2C221E]">
+                      Homepage → Style / Instagram Section
+                    </h2>
+                    <p className="text-xs text-[#6E5D55]">
+                      Manage the “See How You Style Your Pieces” heading, Instagram link, and gallery cards.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveHomepageSettings()}
+                    className="px-5 py-2 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md shrink-0 self-start sm:self-auto"
+                  >
+                    Save Style Section
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Section Heading</label>
+                    <input
+                      type="text"
+                      value={draftSettings.styleSectionHeading ?? 'See How You Style Your Pieces'}
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          styleSectionHeading: e.target.value,
+                        })
+                      }
+                      placeholder="See How You Style Your Pieces"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">
+                      Instagram Handle / Display Text
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSettings.instagramHandle}
+                      onChange={(e) =>
+                        setDraftSettings({ ...draftSettings, instagramHandle: e.target.value })
+                      }
+                      placeholder="@mikkimama"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Instagram Profile URL</label>
+                    <input
+                      type="url"
+                      value={
+                        draftSettings.styleInstagramUrl ??
+                        (draftSettings.instagramHandle?.startsWith('http')
+                          ? draftSettings.instagramHandle
+                          : '')
+                      }
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          styleInstagramUrl: e.target.value,
+                        })
+                      }
+                      placeholder="https://www.instagram.com/..."
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-[#2C221E]">
+                      Section Images ({getDraftGalleryImages('styleImages').length} cards — Live Preview & Reorder)
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#F4EFEA] hover:bg-[#EAE0D6] border border-[#D8C7BE] rounded text-xs font-medium text-[#2C221E] cursor-pointer transition-colors">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Upload New Image(s)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleSectionGalleryUpload(e, 'styleImages')}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {getDraftGalleryImages('styleImages').map((imgSrc, idx, arr) => (
+                      <div
+                        key={`${idx}-${imgSrc.slice(-18)}`}
+                        className="border border-[#E5D9D0] rounded-lg p-2 bg-[#FAF7F2] space-y-2 flex flex-col justify-between"
+                      >
+                        <div className="aspect-square rounded-md overflow-hidden border border-[#E5D9D0] bg-[#F4EFEA] relative">
+                          <ResilientImage
+                            src={imgSrc}
+                            alt={`Style gallery card ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-[#2C221E]/75 text-white text-[10px] rounded font-medium">
+                            #{idx + 1}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1 pt-1">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => moveSectionImage('styleImages', idx, 'prev')}
+                              title="Move Earlier"
+                              className="p-1.5 bg-white border border-[#D8C7BE] rounded text-[#2C221E] hover:bg-[#F4EFEA] disabled:opacity-35"
+                            >
+                              <ArrowUp className="w-3 h-3 -rotate-90" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === arr.length - 1}
+                              onClick={() => moveSectionImage('styleImages', idx, 'next')}
+                              title="Move Later"
+                              className="p-1.5 bg-white border border-[#D8C7BE] rounded text-[#2C221E] hover:bg-[#F4EFEA] disabled:opacity-35"
+                            >
+                              <ArrowDown className="w-3 h-3 -rotate-90" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <label
+                              title="Replace Image"
+                              className="px-2 py-1 bg-white border border-[#D8C7BE] rounded text-[11px] font-medium text-[#2C221E] hover:bg-[#F4EFEA] cursor-pointer"
+                            >
+                              Replace
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleSectionImageReplace(e, 'styleImages', idx)}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => removeSectionImage('styleImages', idx)}
+                              title="Delete Image"
+                              className="p-1.5 bg-white border border-[#E8C5C0] text-[#A63A3A] rounded hover:bg-[#FDF2F0]"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveHomepageSettings()}
+                    className="px-6 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md"
+                  >
+                    Save Style / Instagram Section
+                  </button>
+                </div>
+              </div>
+
+              {/* Homepage → Custom Order Section */}
+              <div className="bg-white border border-[#E5D9D0] rounded-lg p-6 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-serif-display text-2xl font-semibold text-[#2C221E]">
+                      Homepage → Custom Order Section
+                    </h2>
+                    <p className="text-xs text-[#6E5D55]">
+                      Manage the “Looking for something personal?” heading, description, CTA button, promo text, and supporting images.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveHomepageSettings()}
+                    className="px-5 py-2 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md shrink-0 self-start sm:self-auto"
+                  >
+                    Save Custom Order Section
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Section Heading</label>
+                    <input
+                      type="text"
+                      value={draftSettings.customOrderHeading ?? 'Looking for something personal?'}
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          customOrderHeading: e.target.value,
+                        })
+                      }
+                      placeholder="Looking for something personal?"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">
+                      Promo / Coupon Button Text
+                    </label>
+                    <input
+                      type="text"
+                      value={
+                        draftSettings.customOrderPromoText ??
+                        `Use Code: ${draftSettings.promoBannerCode}`
+                      }
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          customOrderPromoText: e.target.value,
+                        })
+                      }
+                      placeholder="Use Code: LOVE20"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium mb-1">Description Text</label>
+                  <textarea
+                    rows={3}
+                    value={
+                      draftSettings.customOrderDescription ??
+                      'We craft custom botanical resin pieces—from preserving your wedding bouquet petals to monogrammed floral keyrings and bridesmaid gift boxes.'
+                    }
+                    onChange={(e) =>
+                      setDraftSettings({
+                        ...draftSettings,
+                        customOrderDescription: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Primary Button Text</label>
+                    <input
+                      type="text"
+                      value={draftSettings.customOrderButtonText ?? 'Request a Custom Order'}
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          customOrderButtonText: e.target.value,
+                        })
+                      }
+                      placeholder="Request a Custom Order"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">
+                      Primary Button Link / Action (e.g., /contact or WhatsApp/External URL)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSettings.customOrderButtonLink ?? '/contact'}
+                      onChange={(e) =>
+                        setDraftSettings({
+                          ...draftSettings,
+                          customOrderButtonLink: e.target.value,
+                        })
+                      }
+                      placeholder="/contact"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-[#2C221E]">
+                      Supporting Images ({getDraftGalleryImages('customOrderImages').length} cards — Live Preview & Reorder)
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#F4EFEA] hover:bg-[#EAE0D6] border border-[#D8C7BE] rounded text-xs font-medium text-[#2C221E] cursor-pointer transition-colors">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Upload New Image(s)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleSectionGalleryUpload(e, 'customOrderImages')}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {getDraftGalleryImages('customOrderImages').map((imgSrc, idx, arr) => (
+                      <div
+                        key={`${idx}-${imgSrc.slice(-18)}`}
+                        className="border border-[#E5D9D0] rounded-lg p-2.5 bg-[#FAF7F2] space-y-2 flex flex-col justify-between"
+                      >
+                        <div className="aspect-square rounded-md overflow-hidden border border-[#DFD2C7] bg-white relative">
+                          <ResilientImage
+                            src={imgSrc}
+                            alt={`Custom order preview ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-[#2C221E]/75 text-white text-[10px] rounded font-medium">
+                            #{idx + 1}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1 pt-1">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => moveSectionImage('customOrderImages', idx, 'prev')}
+                              title="Move Earlier"
+                              className="p-1.5 bg-white border border-[#D8C7BE] rounded text-[#2C221E] hover:bg-[#F4EFEA] disabled:opacity-35"
+                            >
+                              <ArrowUp className="w-3 h-3 -rotate-90" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === arr.length - 1}
+                              onClick={() => moveSectionImage('customOrderImages', idx, 'next')}
+                              title="Move Later"
+                              className="p-1.5 bg-white border border-[#D8C7BE] rounded text-[#2C221E] hover:bg-[#F4EFEA] disabled:opacity-35"
+                            >
+                              <ArrowDown className="w-3 h-3 -rotate-90" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <label
+                              title="Replace Image"
+                              className="px-2.5 py-1 bg-white border border-[#D8C7BE] rounded text-[11px] font-medium text-[#2C221E] hover:bg-[#F4EFEA] cursor-pointer"
+                            >
+                              Replace
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                  handleSectionImageReplace(e, 'customOrderImages', idx)
+                                }
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => removeSectionImage('customOrderImages', idx)}
+                              title="Delete Image"
+                              className="p-1.5 bg-white border border-[#E8C5C0] text-[#A63A3A] rounded hover:bg-[#FDF2F0]"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveHomepageSettings()}
+                    className="px-6 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md"
+                  >
+                    Save Custom Order Section
+                  </button>
+                </div>
               </div>
 
               {/* Quick Toggle for Featured / New Arrivals / Best Sellers */}

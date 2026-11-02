@@ -35,6 +35,27 @@ export const INITIAL_SETTINGS: StoreSettings = {
   manualWhatsappNumber: '8710078213',
   instagramHandle:
     'https://www.instagram.com/mikimama_2.0?utm_source=ig_web_button_share_sheet&srtk=ZDNlZDc0MzIxNw==',
+  styleSectionHeading: 'See How You Style Your Pieces',
+  styleInstagramUrl:
+    'https://www.instagram.com/mikimama_2.0?utm_source=ig_web_button_share_sheet&srtk=ZDNlZDc0MzIxNw==',
+  styleImages: [
+    '/assets/products/layered-necklaces.png',
+    '/assets/products/botanical-rings.png',
+    '/assets/products/ceramic-dish-earrings.png',
+    '/assets/products/worn-gold-pendant.png',
+    '/assets/products/silk-stud-earrings.png',
+  ],
+  customOrderHeading: 'Looking for something personal?',
+  customOrderDescription:
+    'We craft custom botanical resin pieces—from preserving your wedding bouquet petals to monogrammed floral keyrings and bridesmaid gift boxes.',
+  customOrderButtonText: 'Request a Custom Order',
+  customOrderButtonLink: '/contact',
+  customOrderPromoText: 'Use Code: LOVE20',
+  customOrderImages: [
+    '/assets/products/heart-coaster-set.png',
+    '/assets/products/initial-keyrings-duo.png',
+    '/assets/products/gold-rim-tray.png',
+  ],
   updatedAt: '2026-11-02T15:29:49.738Z',
 };
 

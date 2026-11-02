@@ -237,10 +237,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [settings, setSettings] = useState<StoreSettings>(() => {
     const pre = getPrehydratedStore();
-    if (pre && pre.settings && pre.settings.id) {
-      return { ...INITIAL_SETTINGS, ...pre.settings };
+    const local = loadLocal<StoreSettings | null>(STORAGE_KEYS.SETTINGS, null);
+    const preSettings =
+      pre && pre.settings && pre.settings.id
+        ? ({ ...INITIAL_SETTINGS, ...pre.settings } as StoreSettings)
+        : null;
+    if (preSettings && local && local.id) {
+      const preTime = Date.parse(preSettings.updatedAt || '') || 0;
+      const localTime = Date.parse(local.updatedAt || '') || 0;
+      if (localTime > preTime) {
+        return { ...INITIAL_SETTINGS, ...local };
+      }
+      return preSettings;
     }
-    return loadLocal(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+    if (preSettings) return preSettings;
+    if (local && local.id) return { ...INITIAL_SETTINGS, ...local };
+    return INITIAL_SETTINGS;
   });
   const [cart, setCart] = useState<CartItem[]>(() =>
     loadLocal(STORAGE_KEYS.CART, [])
@@ -309,11 +321,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       try {
-        await fetch('/api/store/state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(partial),
-        });
+        // Warm up auth bridge cache with a lightweight GET so POST is never 302-redirected into a GET
+        await fetch('/api/store/ping', { method: 'GET', cache: 'no-store' }).catch(() => null);
+
+        const postState = async () =>
+          fetch('/api/store/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(partial),
+            cache: 'no-store',
+          });
+
+        let res = await postState();
+        let data = res.ok ? await res.json().catch(() => null) : null;
+
+        // If a proxy 302 redirect turned POST into GET (missing data.success === true), retry POST immediately
+        if (!res.ok || res.redirected || !data || data.success !== true) {
+          res = await postState();
+          data = res.ok ? await res.json().catch(() => null) : null;
+        }
+
+        if (res.ok && data && data.success === true) {
+          if (partial.settings && data.settings) {
+            const normSettings = {
+              ...INITIAL_SETTINGS,
+              ...partial.settings,
+              ...data.settings,
+            } as StoreSettings;
+            setSettings(normSettings);
+            saveLocal(STORAGE_KEYS.SETTINGS, normSettings);
+            if (typeof window !== 'undefined') {
+              window.__MIKKIMAMA_STORE__ = {
+                ...(window.__MIKKIMAMA_STORE__ || {}),
+                settings: normSettings,
+              };
+            }
+          }
+          if (partial.products && Array.isArray(data.products)) {
+            setProducts(data.products as Product[]);
+            saveLocal(STORAGE_KEYS.PRODUCTS, data.products);
+            if (typeof window !== 'undefined') {
+              window.__MIKKIMAMA_STORE__ = {
+                ...(window.__MIKKIMAMA_STORE__ || {}),
+                products: data.products as Product[],
+              };
+            }
+          }
+        }
       } catch {
         // Offline or dev reload fallback
       }
@@ -379,12 +433,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             saveLocal(STORAGE_KEYS.CUSTOMERS, data.customers);
           }
           if (data.settings && data.settings.id) {
-            const mergedSettings: StoreSettings = {
+            const serverSettings: StoreSettings = {
               ...INITIAL_SETTINGS,
               ...data.settings,
             };
-            setSettings(mergedSettings);
-            saveLocal(STORAGE_KEYS.SETTINGS, mergedSettings);
+            const localSettings = loadLocal<StoreSettings | null>(STORAGE_KEYS.SETTINGS, null);
+            const serverTime = Date.parse(serverSettings.updatedAt || '') || 0;
+            const localTime = localSettings ? Date.parse(localSettings.updatedAt || '') || 0 : 0;
+
+            if (localSettings && localSettings.id && localTime > serverTime) {
+              const latestLocal = { ...INITIAL_SETTINGS, ...localSettings };
+              setSettings(latestLocal);
+              saveLocal(STORAGE_KEYS.SETTINGS, latestLocal);
+              void syncStoreState({ settings: latestLocal });
+            } else {
+              setSettings(serverSettings);
+              saveLocal(STORAGE_KEYS.SETTINGS, serverSettings);
+            }
           }
         }
       } catch {
@@ -395,7 +460,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [syncStoreState]);
 
   // Auth listener
   useEffect(() => {
@@ -1312,14 +1377,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateStoreSettings = useCallback(
     async (newSettings: StoreSettings) => {
-      const updated = { ...newSettings, updatedAt: new Date().toISOString() };
+      const updated: StoreSettings = {
+        ...INITIAL_SETTINGS,
+        ...settings,
+        ...newSettings,
+        styleImages:
+          Array.isArray(newSettings.styleImages) && newSettings.styleImages.length > 0
+            ? newSettings.styleImages
+            : Array.isArray(settings.styleImages) && settings.styleImages.length > 0
+            ? settings.styleImages
+            : INITIAL_SETTINGS.styleImages,
+        customOrderImages:
+          Array.isArray(newSettings.customOrderImages) && newSettings.customOrderImages.length > 0
+            ? newSettings.customOrderImages
+            : Array.isArray(settings.customOrderImages) && settings.customOrderImages.length > 0
+            ? settings.customOrderImages
+            : INITIAL_SETTINGS.customOrderImages,
+        updatedAt: new Date().toISOString(),
+      };
       setSettings(updated);
+      saveLocal(STORAGE_KEYS.SETTINGS, updated);
       await syncStoreState({ settings: updated });
 
       if (currentUser?.email?.toLowerCase() === 'subhasishdas1001@gmail.com' && currentUser.emailVerified) {
         try {
+          const latestSaved = loadLocal<StoreSettings>(STORAGE_KEYS.SETTINGS, updated);
           await setDoc(doc(db, 'settings', 'storefront'), {
-            ...updated,
+            ...latestSaved,
             updatedAt: serverTimestamp(),
           });
         } catch {
@@ -1329,7 +1413,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       showToast('Store Settings Saved', 'Your storefront changes are now live.');
     },
-    [currentUser, syncStoreState, showToast]
+    [settings, currentUser, syncStoreState, showToast]
   );
 
   const resetDemoStore = useCallback(async () => {

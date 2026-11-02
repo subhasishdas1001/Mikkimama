@@ -295,7 +295,11 @@ service cloud.firestore {
         'freeShippingThreshold', 'standardShippingRate',
         'supportEmail', 'supportPhone', 'supportWhatsapp',
         'manualWhatsappOrderEnabled', 'manualWhatsappNumber',
-        'instagramHandle', 'updatedAt'
+        'instagramHandle',
+        'styleSectionHeading', 'styleInstagramUrl', 'styleImages',
+        'customOrderHeading', 'customOrderDescription', 'customOrderButtonText',
+        'customOrderButtonLink', 'customOrderPromoText', 'customOrderImages',
+        'updatedAt'
       ]) &&
       isValidId(data.id) &&
       data.heroHeading is string && data.heroHeading.size() <= 160 &&
@@ -325,7 +329,16 @@ service cloud.firestore {
       data.supportWhatsapp is string && data.supportWhatsapp.size() <= 40 &&
       (!('manualWhatsappOrderEnabled' in data) || data.manualWhatsappOrderEnabled is bool) &&
       (!('manualWhatsappNumber' in data) || (data.manualWhatsappNumber is string && data.manualWhatsappNumber.size() <= 40)) &&
-      data.instagramHandle is string && data.instagramHandle.size() <= 80 &&
+      (!('styleSectionHeading' in data) || (data.styleSectionHeading is string && data.styleSectionHeading.size() <= 200)) &&
+      (!('styleInstagramUrl' in data) || (data.styleInstagramUrl is string && data.styleInstagramUrl.size() <= 500)) &&
+      (!('styleImages' in data) || (data.styleImages is list && data.styleImages.size() <= 20)) &&
+      (!('customOrderHeading' in data) || (data.customOrderHeading is string && data.customOrderHeading.size() <= 200)) &&
+      (!('customOrderDescription' in data) || (data.customOrderDescription is string && data.customOrderDescription.size() <= 1500)) &&
+      (!('customOrderButtonText' in data) || (data.customOrderButtonText is string && data.customOrderButtonText.size() <= 100)) &&
+      (!('customOrderButtonLink' in data) || (data.customOrderButtonLink is string && data.customOrderButtonLink.size() <= 500)) &&
+      (!('customOrderPromoText' in data) || (data.customOrderPromoText is string && data.customOrderPromoText.size() <= 120)) &&
+      (!('customOrderImages' in data) || (data.customOrderImages is list && data.customOrderImages.size() <= 20)) &&
+      data.instagramHandle is string && data.instagramHandle.size() <= 300 &&
       data.updatedAt is timestamp;
     }
 

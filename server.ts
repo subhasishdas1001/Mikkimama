@@ -10,7 +10,7 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // Persistent server-side store snapshot file
 const DATA_FILE = path.resolve(process.cwd(), '.store-data.json');
@@ -22,25 +22,41 @@ try {
   // Ignore if already exists
 }
 
+// Always serve uploaded files directly from UPLOAD_DIR in both dev and production
+app.use(
+  '/assets/uploads',
+  express.static(UPLOAD_DIR, {
+    maxAge: '365d',
+    immutable: true,
+  })
+);
+
 // Automatically extract any inline base64 images into static files under /public/assets/uploads/
 // so .store-data.json stays lightweight (< 30 KB) and browser localStorage never overflows.
 function normalizeBase64Images(val: unknown): unknown {
   if (typeof val === 'string' && val.startsWith('data:image/')) {
-    const match = val.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
-    if (match) {
+    const base64Marker = ';base64,';
+    const base64Idx = val.indexOf(base64Marker);
+    if (base64Idx !== -1) {
       try {
-        let ext = match[1].toLowerCase();
+        const header = val.slice('data:image/'.length, base64Idx);
+        const mimeSubtype = header.split(';')[0].toLowerCase().trim();
+        let ext = mimeSubtype.replace(/[^a-z0-9]/g, '') || 'png';
         if (ext === 'jpeg') ext = 'jpg';
-        if (ext === 'svg+xml') ext = 'svg';
-        const buf = Buffer.from(match[2], 'base64');
-        const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
-        const fileName = `mkm-${hash}.${ext}`;
-        const filePath = path.join(UPLOAD_DIR, fileName);
-        if (!fs.existsSync(filePath)) {
-          fs.writeFileSync(filePath, buf);
+        if (ext === 'svgxml') ext = 'svg';
+        const rawBase64 = val.slice(base64Idx + base64Marker.length).trim();
+        const buf = Buffer.from(rawBase64, 'base64');
+        if (buf.length > 0) {
+          const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+          const fileName = `mkm-${hash}.${ext}`;
+          const filePath = path.join(UPLOAD_DIR, fileName);
+          if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, buf);
+          }
+          return `/assets/uploads/${fileName}`;
         }
-        return `/assets/uploads/${fileName}`;
-      } catch {
+      } catch (err) {
+        console.error('Error normalizing base64 image:', err);
         return val;
       }
     }
@@ -70,12 +86,14 @@ function readServerStore(): Record<string, unknown> {
   return {};
 }
 
-function writeServerStore(data: Record<string, unknown>) {
+function writeServerStore(data: Record<string, unknown>): Record<string, unknown> {
   try {
     const normalized = normalizeBase64Images(data) as Record<string, unknown>;
     fs.writeFileSync(DATA_FILE, JSON.stringify(normalized, null, 2), 'utf-8');
+    return normalized;
   } catch (err) {
     console.error('Error writing server store file:', err);
+    return data;
   }
 }
 
@@ -201,7 +219,26 @@ app.get('/api/store/init.js', (_req, res) => {
   res.send(`window.__MIKKIMAMA_STORE__ = ${JSON.stringify(data)};`);
 });
 
-// 6. Server-side Store State Sync Endpoint
+// 6. Server-side Store State Sync & Image Upload Endpoints
+app.get('/api/store/ping', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({ ok: true, ts: Date.now() });
+});
+
+app.post('/api/store/upload-image', (req, res) => {
+  const { dataUrl } = req.body || {};
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+    res.status(400).json({ success: false, error: 'Invalid image dataUrl' });
+    return;
+  }
+  const normalizedUrl = normalizeBase64Images(dataUrl);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({
+    success: true,
+    url: typeof normalizedUrl === 'string' ? normalizedUrl : dataUrl,
+  });
+});
+
 app.get('/api/store/state', (_req, res) => {
   const data = readServerStore();
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -212,10 +249,34 @@ app.get('/api/store/state', (_req, res) => {
 
 app.post('/api/store/state', (req, res) => {
   const current = readServerStore();
-  const updated = { ...current, ...(req.body || {}), updatedAt: new Date().toISOString() };
-  writeServerStore(updated);
+  const incomingBody = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<
+    string,
+    unknown
+  >;
+  const mergedSettings =
+    incomingBody.settings && typeof incomingBody.settings === 'object'
+      ? {
+          ...((current.settings && typeof current.settings === 'object'
+            ? current.settings
+            : {}) as Record<string, unknown>),
+          ...(incomingBody.settings as Record<string, unknown>),
+        }
+      : current.settings;
+
+  const updated: Record<string, unknown> = {
+    ...current,
+    ...incomingBody,
+    ...(mergedSettings ? { settings: mergedSettings } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+  const normalized = writeServerStore(updated);
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.json({ success: true, updatedAt: updated.updatedAt });
+  res.json({
+    success: true,
+    updatedAt: normalized.updatedAt,
+    settings: normalized.settings,
+    products: normalized.products,
+  });
 });
 
 // 7. SEO Endpoints: /robots.txt and /sitemap.xml
