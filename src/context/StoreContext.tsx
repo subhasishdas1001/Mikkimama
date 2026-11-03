@@ -238,11 +238,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<StoreSettings>(() => {
     const pre = getPrehydratedStore();
     const local = loadLocal<StoreSettings | null>(STORAGE_KEYS.SETTINGS, null);
+    const hasAdminSession = Boolean(loadLocal(STORAGE_KEYS.ADMIN_SESSION, null));
     const preSettings =
       pre && pre.settings && pre.settings.id
         ? ({ ...INITIAL_SETTINGS, ...pre.settings } as StoreSettings)
         : null;
-    if (preSettings && local && local.id) {
+    if (preSettings && local && local.id && hasAdminSession) {
       const preTime = Date.parse(preSettings.updatedAt || '') || 0;
       const localTime = Date.parse(local.updatedAt || '') || 0;
       if (localTime > preTime) {
@@ -292,6 +293,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const broadcastStoreUpdate = useCallback((payload: { settings?: StoreSettings; products?: Product[] }) => {
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+    try {
+      const bc = new BroadcastChannel('mikkimama_store_sync');
+      bc.postMessage({ type: 'STORE_UPDATED', payload, ts: Date.now() });
+      bc.close();
+    } catch {
+      // Ignore BroadcastChannel errors
+    }
+  }, []);
+
   // Sync state to localStorage & server store backup
   const syncStoreState = useCallback(
     async (partial: {
@@ -319,6 +331,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           ...partial,
         };
       }
+
+      broadcastStoreUpdate({ settings: partial.settings, products: partial.products });
 
       try {
         // Warm up auth bridge cache with a lightweight GET so POST is never 302-redirected into a GET
@@ -356,6 +370,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 settings: normSettings,
               };
             }
+            broadcastStoreUpdate({ settings: normSettings });
           }
           if (partial.products && Array.isArray(data.products)) {
             setProducts(data.products as Product[]);
@@ -366,13 +381,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 products: data.products as Product[],
               };
             }
+            broadcastStoreUpdate({ products: data.products as Product[] });
           }
         }
       } catch {
         // Offline or dev reload fallback
       }
     },
-    []
+    [broadcastStoreUpdate]
   );
 
   useEffect(() => {
@@ -398,11 +414,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     let mounted = true;
-    async function hydrateStore() {
+    async function hydrateStore(forceServerSettings = false) {
       try {
-        const res = await fetch('/api/store/state', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
+        await fetch('/api/store/ping', { method: 'GET', cache: 'no-store' }).catch(() => null);
+        let res = await fetch(`/api/store/state?_t=${Date.now()}`, { cache: 'no-store' });
+        let data = res.ok ? await res.json().catch(() => null) : null;
+        if (!res.ok || !data || typeof data !== 'object') {
+          res = await fetch(`/api/store/state?_t=${Date.now()}`, { cache: 'no-store' });
+          data = res.ok ? await res.json().catch(() => null) : null;
+        }
+        if (res.ok && data && typeof data === 'object') {
           if (!mounted) return;
           if (Array.isArray(data.products)) {
             setProducts(data.products);
@@ -438,10 +459,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ...data.settings,
             };
             const localSettings = loadLocal<StoreSettings | null>(STORAGE_KEYS.SETTINGS, null);
+            const hasAdminSession = Boolean(loadLocal(STORAGE_KEYS.ADMIN_SESSION, null));
             const serverTime = Date.parse(serverSettings.updatedAt || '') || 0;
             const localTime = localSettings ? Date.parse(localSettings.updatedAt || '') || 0 : 0;
 
-            if (localSettings && localSettings.id && localTime > serverTime) {
+            if (
+              !forceServerSettings &&
+              hasAdminSession &&
+              localSettings &&
+              localSettings.id &&
+              localTime > serverTime
+            ) {
               const latestLocal = { ...INITIAL_SETTINGS, ...localSettings };
               setSettings(latestLocal);
               saveLocal(STORAGE_KEYS.SETTINGS, latestLocal);
@@ -449,6 +477,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } else {
               setSettings(serverSettings);
               saveLocal(STORAGE_KEYS.SETTINGS, serverSettings);
+              if (typeof window !== 'undefined') {
+                window.__MIKKIMAMA_STORE__ = {
+                  ...(window.__MIKKIMAMA_STORE__ || {}),
+                  settings: serverSettings,
+                };
+              }
             }
           }
         }
@@ -456,9 +490,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Use pre-hydrated or local defaults
       }
     }
-    hydrateStore();
+    void hydrateStore();
+
+    // Listen for cross-tab localStorage updates, BroadcastChannel messages, and tab focus
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.SETTINGS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as StoreSettings;
+          if (parsed && parsed.id) {
+            setSettings({ ...INITIAL_SETTINGS, ...parsed });
+          }
+        } catch {
+          // Ignore parse error
+        }
+      } else if (e.key === STORAGE_KEYS.PRODUCTS && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as Product[];
+          if (Array.isArray(parsed)) setProducts(parsed);
+        } catch {
+          // Ignore parse error
+        }
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void hydrateStore(true);
+      }
+    };
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('mikkimama_store_sync');
+        bc.onmessage = (ev) => {
+          const msg = ev.data;
+          if (msg && msg.type === 'STORE_UPDATED' && msg.payload) {
+            if (msg.payload.settings && msg.payload.settings.id) {
+              setSettings({ ...INITIAL_SETTINGS, ...msg.payload.settings });
+            }
+            if (Array.isArray(msg.payload.products)) {
+              setProducts(msg.payload.products);
+            }
+          }
+        };
+      } catch {
+        bc = null;
+      }
+    }
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
     return () => {
       mounted = false;
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {
+          // Ignore close error
+        }
+      }
     };
   }, [syncStoreState]);
 

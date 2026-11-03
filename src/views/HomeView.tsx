@@ -18,11 +18,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
     .slice(0, 3);
 
   const defaultStyleImages = [
-    '/assets/products/layered-necklaces.png',
-    '/assets/products/botanical-rings.png',
-    '/assets/products/ceramic-dish-earrings.png',
-    '/assets/products/worn-gold-pendant.png',
-    '/assets/products/silk-stud-earrings.png',
+    '/assets/uploads/mkm-ac7f7ff6c82f69b6.webp',
+    '/assets/uploads/mkm-60be77a8ff453151.webp',
+    '/assets/uploads/mkm-092d4a9c4c0e842a.webp',
+    '/assets/uploads/mkm-a5774a089b992a97.webp',
+    '/assets/uploads/mkm-e37c1d1e7ad756a2.webp',
+    '/assets/uploads/mkm-787ec037accf23c1.webp',
   ];
 
   const stylingGallery = (
@@ -35,9 +36,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
   }));
 
   const defaultCustomImages = [
-    '/assets/products/heart-coaster-set.png',
-    '/assets/products/initial-keyrings-duo.png',
-    '/assets/products/gold-rim-tray.png',
+    '/assets/uploads/mkm-d984bdd28a848b76.webp',
+    '/assets/uploads/mkm-8b146cebe1a8b973.webp',
+    '/assets/uploads/mkm-fd46539a996be599.webp',
   ];
 
   const customPreviewImages = (
@@ -309,7 +310,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {stylingGallery.map((img, i) => (
               <div
-                key={i}
+                key={`${i}-${img.src}`}
                 onClick={() => navigate('/shop')}
                 className="aspect-square rounded-lg overflow-hidden border border-[#E5D9D0] bg-[#F4EFEA] cursor-pointer group"
               >
@@ -372,7 +373,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate }) => {
           <div className="lg:col-span-7 grid grid-cols-3 gap-3 sm:gap-4">
             {customPreviewImages.map((item, idx) => (
               <div
-                key={idx}
+                key={`${idx}-${item.src}`}
                 className="aspect-square rounded-lg overflow-hidden border border-[#DFD2C7] bg-white"
               >
                 <ResilientImage

@@ -354,14 +354,24 @@ export const ContactView: React.FC = () => {
             <Phone className="w-4 h-4 text-[#737765] mt-0.5" />
             <div>
               <p className="font-semibold text-[#2C221E]">Phone Support (Mon–Sat, 10am–6pm IST)</p>
-              <p className="font-mono-tabular">{settings.supportPhone}</p>
+              <p className="font-mono-tabular">
+                {settings.supportPhone ||
+                  (settings.manualWhatsappNumber
+                    ? `+91 ${settings.manualWhatsappNumber}`
+                    : '+91 87100 78213')}
+              </p>
             </div>
           </div>
           <div className="flex items-start gap-3">
             <MessageCircle className="w-4 h-4 text-[#737765] mt-0.5" />
             <div>
               <p className="font-semibold text-[#2C221E]">WhatsApp Concierge</p>
-              <p className="font-mono-tabular">{settings.supportWhatsapp}</p>
+              <p className="font-mono-tabular">
+                {settings.supportWhatsapp ||
+                  (settings.manualWhatsappNumber
+                    ? `+91 ${settings.manualWhatsappNumber}`
+                    : '+91 87100 78213')}
+              </p>
             </div>
           </div>
           <div className="flex items-start gap-3">

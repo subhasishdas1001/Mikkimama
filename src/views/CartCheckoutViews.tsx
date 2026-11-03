@@ -402,7 +402,7 @@ export const CheckoutView: React.FC<{ navigate: (path: string) => void }> = ({ n
   >('Standard Insured Delivery');
 
   // Available payment methods configured in Admin -> Payments
-  const availablePaymentOptions = [
+  const configuredPaymentOptions = [
     ...(settings.upiEnabled ? [{ id: 'UPI', label: 'UPI (GPay, PhonePe, Paytm)', icon: Smartphone }] : []),
     ...(settings.razorpayEnabled
       ? [{ id: 'Razorpay Gateway', label: 'Razorpay Secure Checkout', icon: ShieldCheck }]
@@ -421,6 +421,14 @@ export const CheckoutView: React.FC<{ navigate: (path: string) => void }> = ({ n
       ? [{ id: 'Cash on Delivery', label: 'Cash on Delivery (Pay at Doorstep)', icon: Truck }]
       : []),
   ];
+
+  const availablePaymentOptions =
+    configuredPaymentOptions.length > 0
+      ? configuredPaymentOptions
+      : [
+          { id: 'UPI', label: 'UPI (GPay, PhonePe, Paytm)', icon: Smartphone },
+          { id: 'Cash on Delivery', label: 'Cash on Delivery (Pay at Doorstep)', icon: Truck },
+        ];
 
   const [paymentMethod, setPaymentMethod] = useState<string>(
     availablePaymentOptions[0]?.id || 'UPI'

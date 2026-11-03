@@ -90,22 +90,8 @@
       }
     </script>
 
-    <!-- Parallel Pre-Fetch of Live Server Store State Before React Mounts -->
-    <script>
-      window.__MIKKIMAMA_STORE_PROMISE__ = fetch('/api/store/state', { cache: 'no-store' })
-        .then(function (r) {
-          return r.ok ? r.json() : null;
-        })
-        .then(function (data) {
-          if (data && typeof data === 'object') {
-            window.__MIKKIMAMA_STORE__ = data;
-          }
-          return data;
-        })
-        .catch(function () {
-          return null;
-        });
-    </script>
+    <!-- Synchronous Pre-Hydration of Live Server Store State Before React Mounts -->
+    <script src="/api/store/init.js"></script>
   </head>
   <body class="bg-[#FAF7F2] text-[#2C221E] antialiased selection:bg-[#E8CFC8] selection:text-[#2C221E]">
     <div id="root"></div>

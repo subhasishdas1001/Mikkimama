@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
@@ -89,9 +89,13 @@ const STUDIO_IMAGE_PRESETS = [
 export const AdminLoginView: React.FC<{ navigate: (path: string) => void }> = ({ navigate }) => {
   const { isAdmin, loginAdminWithCredentials, loginAdminWithGoogle } = useStore();
   const [email, setEmail] = useState('subhasishdas1001@gmail.com');
-  const [password, setPassword] = useState('mikkimama2026');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showResetForm, setShowResetForm] = useState(false);
+  const [resetEmail, setResetEmail] = useState('subhasishdas1001@gmail.com');
+  const [newPasscode, setNewPasscode] = useState('');
 
   useEffect(() => {
     if (isAdmin) {
@@ -102,6 +106,7 @@ export const AdminLoginView: React.FC<{ navigate: (path: string) => void }> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
     const res = await loginAdminWithCredentials(email, password);
     setLoading(false);
@@ -112,8 +117,39 @@ export const AdminLoginView: React.FC<{ navigate: (path: string) => void }> = ({
     }
   };
 
+  const handleResetPasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    setLoading(true);
+    try {
+      const resp = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          verificationEmail: resetEmail,
+          newPassword: newPasscode,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.success) {
+        setSuccessMsg(data.message || 'Passcode updated. Please sign in with your new passcode.');
+        setShowResetForm(false);
+        setPassword('');
+        setNewPasscode('');
+      } else {
+        setError(data.error || 'Could not reset passcode. Verify your owner email.');
+      }
+    } catch {
+      setError('Unable to reach server to reset passcode.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleAdmin = async () => {
     setError('');
+    setSuccessMsg('');
     setLoading(true);
     const res = await loginAdminWithGoogle();
     setLoading(false);
@@ -146,37 +182,113 @@ export const AdminLoginView: React.FC<{ navigate: (path: string) => void }> = ({
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#2C221E] mb-1">Admin Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E]"
-            />
+        {successMsg && (
+          <div className="p-3 bg-[#F0FDF4] border border-[#BBF7D0] rounded-md text-xs text-[#166534]">
+            {successMsg}
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-medium text-[#2C221E] mb-1">Admin Passcode</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E] font-mono-tabular"
-            />
-          </div>
+        {!showResetForm ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-[#2C221E] mb-1">Admin Email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="subhasishdas1001@gmail.com"
+                className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E]"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-semibold uppercase tracking-widest rounded-md transition-colors"
-          >
-            {loading ? 'Signing In...' : 'Enter Admin Dashboard'}
-          </button>
-        </form>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-[#2C221E]">Admin Passcode</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setSuccessMsg('');
+                    setShowResetForm(true);
+                  }}
+                  className="text-[11px] text-[#737765] hover:text-[#2C221E] underline underline-offset-2"
+                >
+                  Forgot Passcode?
+                </button>
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your admin passcode"
+                autoComplete="current-password"
+                className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E] font-mono-tabular"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-semibold uppercase tracking-widest rounded-md transition-colors"
+            >
+              {loading ? 'Signing In...' : 'Enter Admin Dashboard'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleResetPasscode} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-[#2C221E] mb-1">
+                Registered Store Owner Email
+              </label>
+              <input
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="subhasishdas1001@gmail.com"
+                className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[#2C221E] mb-1">
+                New Admin Passcode (min 6 characters)
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={newPasscode}
+                onChange={(e) => setNewPasscode(e.target.value)}
+                placeholder="Enter new passcode"
+                autoComplete="new-password"
+                className="w-full px-3.5 py-2.5 bg-[#FAF7F2] border border-[#D8C7BE] rounded-md text-xs text-[#2C221E] font-mono-tabular"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-semibold uppercase tracking-wider rounded-md transition-colors"
+              >
+                {loading ? 'Resetting...' : 'Reset Passcode'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setShowResetForm(false);
+                }}
+                className="px-4 py-2.5 border border-[#D8C7BE] text-xs text-[#6E5D55] hover:text-[#2C221E] rounded-md"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
 
         <div className="relative flex py-1 items-center">
           <div className="flex-grow border-t border-[#E8DDD4]" />
@@ -298,12 +410,12 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
       | typeof settings
       | ((prev: typeof settings) => typeof settings)
   ) => {
-    setDraftSettingsState((prev) => {
-      const next =
-        typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater;
-      draftSettingsRef.current = next;
-      return next;
-    });
+    const next =
+      typeof nextOrUpdater === 'function'
+        ? nextOrUpdater(draftSettingsRef.current)
+        : nextOrUpdater;
+    draftSettingsRef.current = next;
+    setDraftSettingsState(next);
   };
 
   const [whatsappNumberError, setWhatsappNumberError] = useState<string>('');
@@ -399,13 +511,131 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
     await updateStoreSettings(updatedSettings);
   };
 
+  // Derive active categories from both explicit categories and products so selectors are never empty
+  const effectiveCategories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const c of categories) {
+      if (c && c.name && c.name.trim()) {
+        map.set(c.name.trim().toLowerCase(), { id: c.id || c.name, name: c.name.trim() });
+      }
+    }
+    for (const p of products) {
+      if (p && p.category && p.category.trim()) {
+        const key = p.category.trim().toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, { id: `cat-${key.replace(/[^a-z0-9]+/g, '-')}`, name: p.category.trim() });
+        }
+      }
+    }
+    if (map.size === 0) {
+      map.set('handmade accessories', {
+        id: 'cat-handmade-accessories',
+        name: 'Handmade Accessories',
+      });
+    }
+    return Array.from(map.values());
+  }, [categories, products]);
+
+  // Security & Staff management state
+  const [currentPasscodeInput, setCurrentPasscodeInput] = useState('');
+  const [newPasscodeInput, setNewPasscodeInput] = useState('');
+  const [staffList, setStaffList] = useState<
+    Array<{ id: string; name: string; email: string; role: string; createdAt?: string }>
+  >([]);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'Owner' | 'Manager' | 'Order Staff'>('Manager');
+  const [newStaffPassword, setNewStaffPassword] = useState('');
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      fetch('/api/admin/staff', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && Array.isArray(d.staff)) {
+            setStaffList(d.staff);
+          }
+        })
+        .catch(() => null);
+    }
+  }, [activeTab]);
+
+  const handleChangeAdminPasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: currentPasscodeInput,
+          newPassword: newPasscodeInput,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        showToast('Passcode Updated', 'Your admin passcode has been updated securely.');
+        setCurrentPasscodeInput('');
+        setNewPasscodeInput('');
+      } else {
+        showToast('Passcode Error', data.error || 'Could not update passcode.', 'error');
+      }
+    } catch {
+      showToast('Network Error', 'Failed to reach server.', 'error');
+    }
+  };
+
+  const handleAddStaffMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newStaffName,
+          email: newStaffEmail,
+          role: newStaffRole,
+          password: newStaffPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.member) {
+        setStaffList((prev) => [
+          ...prev.filter((s) => s.email !== data.member.email),
+          data.member,
+        ]);
+        setNewStaffName('');
+        setNewStaffEmail('');
+        setNewStaffPassword('');
+        showToast('Staff Member Added', `${data.member.name} (${data.member.role}) added.`);
+      } else {
+        showToast('Staff Error', data.error || 'Could not add staff member.', 'error');
+      }
+    } catch {
+      showToast('Network Error', 'Failed to reach server.', 'error');
+    }
+  };
+
+  const handleRemoveStaffMember = async (id: string, name: string) => {
+    try {
+      const res = await fetch(`/api/admin/staff/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setStaffList((prev) => prev.filter((s) => s.id !== id));
+        showToast('Staff Removed', `${name} removed from staff accounts.`, 'info');
+      }
+    } catch {
+      showToast('Network Error', 'Failed to remove staff member.', 'error');
+    }
+  };
+
   const openNewProductModal = () => {
     setEditingProduct({
       id: '',
       name: '',
       slug: '',
       sku: `MKM-${Math.floor(100 + Math.random() * 900)}`,
-      category: categories[0]?.name || 'Handmade Jewellery',
+      category: effectiveCategories[0]?.name || 'Handmade Accessories',
       shortDescription: '',
       description: '',
       images: ['/assets/products/daisy-necklace.png'],
@@ -430,20 +660,19 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
   };
 
   const handleProductFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || !editingProduct) return;
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0 || !editingProduct) return;
+    e.target.value = '';
+    files.forEach((file) => {
+      void trackUploadPromise(
+        optimizeAndUploadImage(file).then((uploadedUrl) => {
           setEditingProduct((prev) =>
             prev
-              ? { ...prev, images: [...prev.images, reader.result as string].slice(0, 8) }
+              ? { ...prev, images: [...prev.images, uploadedUrl].slice(0, 8) }
               : prev
           );
-        }
-      };
-      reader.readAsDataURL(file);
+        })
+      );
     });
   };
 
@@ -548,17 +777,18 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
   };
 
   const defaultStyleGalleryImages = [
-    '/assets/products/layered-necklaces.png',
-    '/assets/products/botanical-rings.png',
-    '/assets/products/ceramic-dish-earrings.png',
-    '/assets/products/worn-gold-pendant.png',
-    '/assets/products/silk-stud-earrings.png',
+    '/assets/uploads/mkm-ac7f7ff6c82f69b6.webp',
+    '/assets/uploads/mkm-60be77a8ff453151.webp',
+    '/assets/uploads/mkm-092d4a9c4c0e842a.webp',
+    '/assets/uploads/mkm-a5774a089b992a97.webp',
+    '/assets/uploads/mkm-e37c1d1e7ad756a2.webp',
+    '/assets/uploads/mkm-787ec037accf23c1.webp',
   ];
 
   const defaultCustomOrderGalleryImages = [
-    '/assets/products/heart-coaster-set.png',
-    '/assets/products/initial-keyrings-duo.png',
-    '/assets/products/gold-rim-tray.png',
+    '/assets/uploads/mkm-d984bdd28a848b76.webp',
+    '/assets/uploads/mkm-8b146cebe1a8b973.webp',
+    '/assets/uploads/mkm-fd46539a996be599.webp',
   ];
 
   const getDraftGalleryImages = (
@@ -2096,7 +2326,7 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
                       className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
                     >
                       <option value="All">All Storefront Products</option>
-                      {categories.map((c) => (
+                      {effectiveCategories.map((c) => (
                         <option key={c.id} value={c.name}>
                           {c.name}
                         </option>
@@ -2502,13 +2732,13 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
                     Revenue by Category
                   </h2>
                   <div className="space-y-3.5 pt-2">
-                    {categories.map((cat) => {
+                    {effectiveCategories.map((cat) => {
                       const catProducts = products.filter((p) => p.category === cat.name);
                       const catRevenue = catProducts.reduce(
                         (sum, p) => sum + p.salePrice * p.soldCount,
                         0
                       );
-                      const maxRev = 420000;
+                      const maxRev = Math.max(1000, ...products.map((p) => p.salePrice * Math.max(1, p.soldCount)));
                       const pct = Math.min(100, Math.max(12, Math.round((catRevenue / maxRev) * 100)));
                       return (
                         <div key={cat.id} className="space-y-1 text-xs">
@@ -3373,6 +3603,140 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
                   </button>
                 </div>
               </div>
+
+              {/* Security, Admin Passcode & Staff Permissions */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <form
+                  onSubmit={handleChangeAdminPasscode}
+                  className="bg-white border border-[#E5D9D0] rounded-lg p-6 space-y-4"
+                >
+                  <div>
+                    <h2 className="font-serif-display text-2xl font-semibold text-[#2C221E]">
+                      Admin Passcode & Security
+                    </h2>
+                    <p className="text-xs text-[#6E5D55]">
+                      Passcodes are hashed with SHA-256 on the server and never stored or transmitted in plain text.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Current Admin Passcode</label>
+                    <input
+                      type="password"
+                      required
+                      value={currentPasscodeInput}
+                      onChange={(e) => setCurrentPasscodeInput(e.target.value)}
+                      placeholder="Enter current passcode"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs font-mono-tabular"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">
+                      New Admin Passcode (min 6 characters)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={newPasscodeInput}
+                      onChange={(e) => setNewPasscodeInput(e.target.value)}
+                      placeholder="Enter new passcode"
+                      className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs font-mono-tabular"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-[#737765] hover:bg-[#5E6252] text-white text-xs font-medium rounded-md"
+                  >
+                    Update Admin Passcode
+                  </button>
+                </form>
+
+                <div className="bg-white border border-[#E5D9D0] rounded-lg p-6 space-y-4">
+                  <div>
+                    <h2 className="font-serif-display text-2xl font-semibold text-[#2C221E]">
+                      Staff Accounts & Role Permissions
+                    </h2>
+                    <p className="text-xs text-[#6E5D55]">
+                      Grant role-based admin access to store managers or order fulfillment staff.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleAddStaffMember} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      required
+                      value={newStaffName}
+                      onChange={(e) => setNewStaffName(e.target.value)}
+                      placeholder="Staff Full Name"
+                      className="px-3 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                    <input
+                      type="email"
+                      required
+                      value={newStaffEmail}
+                      onChange={(e) => setNewStaffEmail(e.target.value)}
+                      placeholder="staff@mikkimama.in"
+                      className="px-3 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    />
+                    <select
+                      value={newStaffRole}
+                      onChange={(e) =>
+                        setNewStaffRole(e.target.value as 'Owner' | 'Manager' | 'Order Staff')
+                      }
+                      className="px-3 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
+                    >
+                      <option value="Manager">Manager (Catalog & Orders)</option>
+                      <option value="Order Staff">Order Staff (Orders Only)</option>
+                      <option value="Owner">Co-Owner (Full Access)</option>
+                    </select>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={newStaffPassword}
+                      onChange={(e) => setNewStaffPassword(e.target.value)}
+                      placeholder="Staff Passcode (min 6 chars)"
+                      className="px-3 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs font-mono-tabular"
+                    />
+                    <div className="sm:col-span-2">
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-[#2C221E] hover:bg-[#43352F] text-white text-xs font-medium rounded-md"
+                      >
+                        + Add Staff Account
+                      </button>
+                    </div>
+                  </form>
+
+                  {staffList.length > 0 && (
+                    <div className="pt-2 border-t border-[#E5D9D0] space-y-2">
+                      {staffList.map((st) => (
+                        <div
+                          key={st.id}
+                          className="flex items-center justify-between p-2.5 bg-[#FAF7F2] border border-[#E5D9D0] rounded text-xs"
+                        >
+                          <div>
+                            <p className="font-semibold text-[#2C221E]">
+                              {st.name}{' '}
+                              <span className="ml-1.5 px-2 py-0.5 bg-[#E5D9D0] text-[#2C221E] rounded text-[10px]">
+                                {st.role}
+                              </span>
+                            </p>
+                            <p className="text-[#6E5D55]">{st.email}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStaffMember(st.id, st.name)}
+                            className="text-[#A63A3A] hover:underline text-[11px]"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -3543,19 +3907,24 @@ export const AdminDashboardView: React.FC<{ navigate: (path: string) => void }> 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-medium mb-1">Category *</label>
-                <select
+                <input
+                  type="text"
+                  required
+                  list="mikkimama-category-options"
                   value={editingProduct.category}
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, category: e.target.value })
                   }
+                  placeholder="Select or type category..."
                   className="w-full px-3.5 py-2 bg-[#FAF7F2] border border-[#D8C7BE] rounded text-xs"
-                >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name}>
-                      {c.name}
-                    </option>
+                />
+                <datalist id="mikkimama-category-options">
+                  {effectiveCategories.map((c) => (
+                    <option key={c.id} value={c.name} />
                   ))}
-                </select>
+                  <option value="Handmade Hair Accessories" />
+                  <option value="Handmade Crochet Jewellery" />
+                </datalist>
               </div>
 
               <div>

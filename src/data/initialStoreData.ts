@@ -18,8 +18,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   promoBannerSubtitle:
     'Thoughtfully packaged in reusable linen keepsake pouches with handwritten notes.',
   promoBannerCode: 'LOVE20',
-  codEnabled: false,
-  upiEnabled: false,
+  codEnabled: true,
+  upiEnabled: true,
   upiId: '',
   razorpayEnabled: false,
   razorpayKeyId: 'rzp_test_mikkimama_boutique',
@@ -39,11 +39,12 @@ export const INITIAL_SETTINGS: StoreSettings = {
   styleInstagramUrl:
     'https://www.instagram.com/mikimama_2.0?utm_source=ig_web_button_share_sheet&srtk=ZDNlZDc0MzIxNw==',
   styleImages: [
-    '/assets/products/layered-necklaces.png',
-    '/assets/products/botanical-rings.png',
-    '/assets/products/ceramic-dish-earrings.png',
-    '/assets/products/worn-gold-pendant.png',
-    '/assets/products/silk-stud-earrings.png',
+    '/assets/uploads/mkm-ac7f7ff6c82f69b6.webp',
+    '/assets/uploads/mkm-60be77a8ff453151.webp',
+    '/assets/uploads/mkm-092d4a9c4c0e842a.webp',
+    '/assets/uploads/mkm-a5774a089b992a97.webp',
+    '/assets/uploads/mkm-e37c1d1e7ad756a2.webp',
+    '/assets/uploads/mkm-787ec037accf23c1.webp',
   ],
   customOrderHeading: 'Looking for something personal?',
   customOrderDescription:
@@ -52,11 +53,11 @@ export const INITIAL_SETTINGS: StoreSettings = {
   customOrderButtonLink: '/contact',
   customOrderPromoText: 'Use Code: LOVE20',
   customOrderImages: [
-    '/assets/products/heart-coaster-set.png',
-    '/assets/products/initial-keyrings-duo.png',
-    '/assets/products/gold-rim-tray.png',
+    '/assets/uploads/mkm-d984bdd28a848b76.webp',
+    '/assets/uploads/mkm-8b146cebe1a8b973.webp',
+    '/assets/uploads/mkm-fd46539a996be599.webp',
   ],
-  updatedAt: '2026-11-02T15:29:49.738Z',
+  updatedAt: '2026-11-02T17:48:00.000Z',
 };
 
 export const INITIAL_CATEGORIES: Category[] = [];

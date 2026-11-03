@@ -145,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, navigate }) => {
             >
               <Heart className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
               {wishlist.length > 0 && (
-                <span className=" -top-0.5 -right-0.5 font-mono-tabular text-[11px] font-semibold text-[#9E584D]">
+                <span className="absolute -top-0.5 -right-0.5 font-mono-tabular text-[11px] font-semibold text-[#9E584D]">
                   {wishlist.length}
                 </span>
               )}

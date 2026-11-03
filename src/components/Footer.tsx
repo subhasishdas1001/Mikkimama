@@ -83,15 +83,26 @@ export const Footer: React.FC<FooterProps> = ({ navigate }) => {
           <div className="pt-2 space-y-1.5 text-xs text-[#5A4A42]">
             <p className="flex items-center gap-2">
               <Mail className="w-3.5 h-3.5 text-[#737765]" />
-              <span>{settings.supportEmail}</span>
+              <span>{settings.supportEmail || 'hello@mikkimama.in'}</span>
             </p>
             <p className="flex items-center gap-2">
               <Phone className="w-3.5 h-3.5 text-[#737765]" />
-              <span className="font-mono-tabular">{settings.supportPhone}</span>
+              <span className="font-mono-tabular">
+                {settings.supportPhone ||
+                  (settings.manualWhatsappNumber
+                    ? `+91 ${settings.manualWhatsappNumber}`
+                    : '+91 87100 78213')}
+              </span>
             </p>
             <p className="flex items-center gap-2">
               <MessageCircle className="w-3.5 h-3.5 text-[#737765]" />
-              <span>WhatsApp Care: {settings.supportWhatsapp}</span>
+              <span>
+                WhatsApp Care:{' '}
+                {settings.supportWhatsapp ||
+                  (settings.manualWhatsappNumber
+                    ? `+91 ${settings.manualWhatsappNumber}`
+                    : '+91 87100 78213')}
+              </span>
             </p>
           </div>
         </div>
@@ -180,11 +191,14 @@ export const Footer: React.FC<FooterProps> = ({ navigate }) => {
             </p>
             <div className="flex items-center gap-4 text-xs font-medium text-[#5A4A42]">
               <a
-                href="#instagram"
-                onClick={(e) => {
-                  e.preventDefault();
-                  showToast('Instagram', `Follow ${settings.instagramHandle} on Instagram!`, 'info');
-                }}
+                href={
+                  settings.styleInstagramUrl ||
+                  (settings.instagramHandle?.startsWith('http')
+                    ? settings.instagramHandle
+                    : 'https://www.instagram.com/mikimama_2.0')
+                }
+                target="_blank"
+                rel="noopener noreferrer"
                 className="hover:text-[#2C221E] underline-offset-4 hover:underline"
               >
                 Instagram
